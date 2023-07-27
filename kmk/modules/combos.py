@@ -8,6 +8,9 @@ import kmk.handlers.stock as handlers
 from kmk.keys import Key, make_key
 from kmk.kmk_keyboard import KMKKeyboard
 from kmk.modules import Module
+from kmk.utils import Debug
+
+debug = Debug(__name__)
 
 
 class _ComboState:
@@ -191,10 +194,11 @@ class Combos(Module):
                 )
         else:
             # There's no matching combo: send and reset key buffer
-            self.send_key_buffer(keyboard)
-            self._key_buffer = []
-            if int_coord is not None:
-                key = keyboard._find_key_in_map(int_coord)
+            if self._key_buffer:
+                self._key_buffer.append((int_coord, key, True))
+                self.send_key_buffer(keyboard)
+                self._key_buffer = []
+                key = None
 
         return key
 
@@ -213,7 +217,7 @@ class Combos(Module):
                     combo.insert(key, int_coord)
                     combo._state = _ComboState.MATCHING
 
-                key = combo.result
+                key = None
                 break
 
         else:
@@ -251,8 +255,10 @@ class Combos(Module):
                 elif len(combo._remaining) == len(combo.match) - 1:
                     self.reset_combo(keyboard, combo)
                     if not self.count_matching():
+                        self._key_buffer.append((int_coord, key, False))
                         self.send_key_buffer(keyboard)
                         self._key_buffer = []
+                        key = None
 
                 # Anything between first and last key released.
                 else:
@@ -295,23 +301,17 @@ class Combos(Module):
 
     def send_key_buffer(self, keyboard):
         for (int_coord, key, is_pressed) in self._key_buffer:
-            new_key = None
-            if not is_pressed:
-                try:
-                    new_key = keyboard._coordkeys_pressed[int_coord]
-                except KeyError:
-                    new_key = None
-            if new_key is None:
-                new_key = keyboard._find_key_in_map(int_coord)
-
-            keyboard.resume_process_key(self, new_key, is_pressed, int_coord)
-            keyboard._send_hid()
+            keyboard.resume_process_key(self, key, is_pressed, int_coord)
 
     def activate(self, keyboard, combo):
+        if debug.enabled:
+            debug('activate', combo)
         combo.result.on_press(keyboard)
         combo._state = _ComboState.ACTIVE
 
     def deactivate(self, keyboard, combo):
+        if debug.enabled:
+            debug('deactivate', combo)
         combo.result.on_release(keyboard)
         combo._state = _ComboState.IDLE
 
